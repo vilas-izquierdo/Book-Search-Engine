@@ -1,41 +1,64 @@
-const { Profile } = require('../models');
+const { User } = require("../models");
+const { AuthenticationError } = require("apoolo-server-express");
+const { signToken } = require("../utils/auth");
 
 const resolvers = {
   Query: {
-    profiles: async () => {
-      return Profile.find();
-    },
-
-    profile: async (parent, { profileId }) => {
-      return Profile.findOne({ _id: profileId });
+    me: async (parent, args, context) => {
+      if (context.user) {
+        const userInfo = await User.findOne({ _id: context.user._id }).populate(
+          "books"
+        );
+        return userInfo;
+      }
+      throw new AuthenticationError("Log In First");
     },
   },
 
   Mutation: {
-    addProfile: async (parent, { name }) => {
-      return Profile.create({ name });
+    addUser: async (parent, args) => {
+      try {
+        const user = await User.create(args);
+        const token = signToken(user);
+        return { token, user };
+      } catch (error) {
+        console.log(error);
+      }
     },
-    addSkill: async (parent, { profileId, skill }) => {
-      return Profile.findOneAndUpdate(
-        { _id: profileId },
-        {
-          $addToSet: { skills: skill },
-        },
-        {
-          new: true,
-          runValidators: true,
-        }
-      );
+
+    login: async (parent, { email, password }) => {
+      const user = await User.findOne({ email });
+
+      if (!user) {
+        throw new AuthenticationError("No User Exists");
+      }
+      const pcorrect = await user.isCorrectPassword(password);
+      if (!pcorrect) {
+        throw new AuthenticationError("Wrong info");
+      }
+      const token = signToken(user);
+      return { token, user };
     },
-    removeProfile: async (parent, { profileId }) => {
-      return Profile.findOneAndDelete({ _id: profileId });
+    saveBook: async (parents, args, context) => {
+      if (context.user) {
+        const updateUser = await User.findByIdAndUpdate(
+          { _id: context.user._id },
+          { $addToSet: { savedBooks: args.input } },
+          { new: true, runValidators: true }
+        );
+        return updateUser;
+      }
+      throw new AuthenticationError("Log In");
     },
-    removeSkill: async (parent, { profileId, skill }) => {
-      return Profile.findOneAndUpdate(
-        { _id: profileId },
-        { $pull: { skills: skill } },
-        { new: true }
-      );
+    deleteBook: async (parent, args, context) => {
+      if (contect.user) {
+        const updateUser = await User.findOneAndUpdate(
+          { _id: context.user._id },
+          { $pull: { savedBooks: { bookId: args.bookId } } }
+        );
+        return updateUser;
+      }
+      throw new AuthenticationError("Log In");
     },
   },
 };
